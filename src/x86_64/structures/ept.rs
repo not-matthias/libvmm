@@ -1,4 +1,4 @@
-use crate::{unsafe_cast, SHIFT_1G, SHIFT_2M, SHIFT_4K, SHIFT_512G};
+use crate::{SHIFT_1G, SHIFT_2M, SHIFT_4K, SHIFT_512G};
 use bitflags::bitflags;
 use libvmm_macros::construct_pt_types;
 

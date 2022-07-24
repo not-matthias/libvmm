@@ -1,3 +1,5 @@
+use core::arch::asm;
+
 use crate::{AlignedAddress, SHIFT_4K};
 
 pub mod exits;
@@ -13,12 +15,12 @@ impl VMX {
             return false;
         }
 
-        llvm_asm!("vmxon $0":: "m" (address));
+        asm!("vmxon {}", in(reg) address);
         true
     }
 
     pub unsafe fn vmxoff() {
-        llvm_asm!("vmxoff");
+        asm!("vmxoff");
     }
 
     pub unsafe fn vmcall() {}

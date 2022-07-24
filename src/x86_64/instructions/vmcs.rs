@@ -1,3 +1,5 @@
+use core::arch::{asm, global_asm};
+
 use crate::x86_64::instructions::msr::*;
 use crate::x86_64::structures::guest::VcpuGuestRegs;
 use crate::{AlignedAddress, SHIFT_4K};
@@ -403,17 +405,14 @@ impl VMCS {
     }
 
     pub fn load(&mut self) -> bool {
-        let error: bool;
-        /* @todo seems to cause a compiler crash */
-        //asm!("vmptrld $1; setna $0": "=qm" (error) : "m" (self.address));
-        unsafe { llvm_asm!("vmptrld $0":: "m" (self.address)) };
+        unsafe { asm!("vmptrld {}", in(reg) self.address) };
 
         VMCSField64Host::RIP.write(vmx_return as u64);
         true
     }
 
     pub fn clear(&mut self) -> bool {
-        unsafe { llvm_asm!("vmclear $0":: "m" (self.address)) };
+        unsafe { asm!("vmclear {}", in(reg) self.address) };
         self.launched = false;
         true
     }
@@ -428,14 +427,14 @@ impl VMCS {
     }
 
     pub fn exit_reason() -> u16 {
-        let reason = unsafe { VMCSField32ReadOnly::VM_EXIT_REASON.read() } as u16;
+        let reason = VMCSField32ReadOnly::VM_EXIT_REASON.read() as u16;
         reason
     }
 
     // A.3, A.4, and A.5
     pub fn adjust_controls(vmx_basic: u64, control: VMCSControl, value: u32) -> u32 {
         let mut result = value;
-        let mut msr = if (vmx_basic & (1 << 55)) != 0 {
+        let msr = if (vmx_basic & (1 << 55)) != 0 {
             match control {
                 /*
                  * If bit 55 in the IA32_VMX_BASIC MSR is read as 1,

@@ -1,6 +1,7 @@
 #![no_std]
-#![feature(llvm_asm)]
-#![feature(global_asm)]
+#![allow(unused_doc_comments)]
+#![allow(non_camel_case_types)]
+#![allow(non_upper_case_globals)]
 
 #[cfg(target_arch = "x86_64")]
 extern crate libvmm_macros;

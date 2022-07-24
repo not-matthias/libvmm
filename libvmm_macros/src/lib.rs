@@ -1,10 +1,10 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use quote::{quote, format_ident};
+use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
-use syn::{ItemEnum, Visibility, Expr, Error};
-use syn::{Ident, Token, braced, parse_macro_input, LitStr, LitInt};
+use syn::{braced, parse_macro_input, Ident, LitInt, LitStr, Token};
+use syn::{Error, Expr, ItemEnum, Visibility};
 
 struct VMCSFieldArguments {
     width: u64,
@@ -26,10 +26,7 @@ impl Parse for VMCSFieldArguments {
             panic!("access can only be \"R\" or \"RW\"");
         }
 
-        Ok(VMCSFieldArguments {
-            width,
-            access,
-        })
+        Ok(VMCSFieldArguments { width, access })
     }
 }
 
@@ -41,10 +38,7 @@ impl Parse for VMCSFieldArguments {
 /// This can only be used for "enums"
 #[proc_macro_attribute]
 pub fn vmcs_access(args: TokenStream, input: TokenStream) -> TokenStream {
-    let VMCSFieldArguments {
-        width,
-        access,
-    } = parse_macro_input!(args as VMCSFieldArguments);
+    let VMCSFieldArguments { width, access } = parse_macro_input!(args as VMCSFieldArguments);
 
     let enum_stream = parse_macro_input!(input as ItemEnum);
     let name = enum_stream.ident.clone();
@@ -53,36 +47,34 @@ pub fn vmcs_access(args: TokenStream, input: TokenStream) -> TokenStream {
     let read_fn = quote! {
         pub fn read(&self) -> #vm_size {
             let mut value: u64;
-            unsafe { llvm_asm!("vmread $1, $0": "=r" (value): "r" (*self as u64)) };
+            unsafe { asm!("vmread {0}, {1}", in(reg) (*self as u64), out(reg) value, options(att_syntax)) };
             value as #vm_size
         }
     };
 
     let write_fn = quote! {
         pub fn write(&self, value: #vm_size) {
-            unsafe { llvm_asm!("vmwrite $0, $1":: "r" (value as u64), "r" (*self as u64)) };
+            unsafe { asm!("vmwrite {1}, {0}", in(reg)  (*self as u64), in(reg) (value as u64), options(att_syntax)) };
         }
     };
 
     if access.value().as_str() == "R" {
-        return TokenStream::from(
-            quote! {
-                #enum_stream
+        return TokenStream::from(quote! {
+            #enum_stream
 
-                impl #name {
-                    #read_fn
-                }
-            });
+            impl #name {
+                #read_fn
+            }
+        });
     } else {
-        return TokenStream::from(
-            quote! {
-                #enum_stream
+        return TokenStream::from(quote! {
+            #enum_stream
 
-                impl #name {
-                    #read_fn
-                    #write_fn
-                }
-            });
+            impl #name {
+                #read_fn
+                #write_fn
+            }
+        });
     }
 }
 
@@ -136,12 +128,24 @@ impl Parse for PageTable {
             content.parse::<Token![:]>()?;
 
             match ident.to_string().as_str() {
-                "valid_flags" => { valid_flags.replace(content.parse()?); },
-                "valid_huge_flags" => { valid_huge_flags.replace(content.parse()?); },
-                "huge_flags" => { huge_flags.replace(content.parse()?); },
-                "normal_shift" => { normal_shift.replace(content.parse()?); },
-                "huge_shift" => { huge_shift.replace(content.parse()?); },
-                "index_shift" => { index_shift.replace(content.parse()?); },
+                "valid_flags" => {
+                    valid_flags.replace(content.parse()?);
+                }
+                "valid_huge_flags" => {
+                    valid_huge_flags.replace(content.parse()?);
+                }
+                "huge_flags" => {
+                    huge_flags.replace(content.parse()?);
+                }
+                "normal_shift" => {
+                    normal_shift.replace(content.parse()?);
+                }
+                "huge_shift" => {
+                    huge_shift.replace(content.parse()?);
+                }
+                "index_shift" => {
+                    index_shift.replace(content.parse()?);
+                }
                 _ => panic!("wrong identifier"),
             }
 
@@ -150,7 +154,6 @@ impl Parse for PageTable {
             if content.is_empty() {
                 break;
             }
-
         }
 
         Ok(PageTable {
@@ -183,67 +186,67 @@ pub fn construct_pt_types(input: TokenStream) -> TokenStream {
     //let convert_macro_name = format_ident!("cast_to_{}", table);
 
     let output = quote! {
-        #[repr(packed)]
-        #[derive(Debug, Clone, Copy)]
-        #visibility struct #entry_name(u64);
+            #[repr(packed)]
+            #[derive(Debug, Clone, Copy)]
+            #visibility struct #entry_name(u64);
 
-        #[repr(packed)]
-        #visibility struct #table {
-            entries: [#entry_name; 512],
-        }
-
-        impl core::ops::Index<u64> for #table {
-            type Output = #entry_name;
-
-            fn index(&self, address: u64) -> &Self::Output {
-                let index = ((address) >> (#index_shift)) & 0x1ff;
-                &self.entries[index as usize]
+            #[repr(packed)]
+            #visibility struct #table {
+                entries: [#entry_name; 512],
             }
-        }
 
-        impl core::ops::IndexMut<u64> for #table {
-            fn index_mut(&mut self, address: u64) -> &mut Self::Output {
-                let index = ((address) >> (#index_shift)) & 0x1ff;
-                &mut self.entries[index as usize]
+            impl core::ops::Index<u64> for #table {
+                type Output = #entry_name;
+
+                fn index(&self, address: u64) -> &Self::Output {
+                    let index = ((address) >> (#index_shift)) & 0x1ff;
+                    &self.entries[index as usize]
+                }
             }
-        }
 
-/* -- "[E0658]: procedural macros cannot expand to macro definitions"
-        #[macro_export]
-        macro_rules! #convert_macro_name {
-            ($x:expr) => {
-                unsafe_cast!($x => &mut #table)
+            impl core::ops::IndexMut<u64> for #table {
+                fn index_mut(&mut self, address: u64) -> &mut Self::Output {
+                    let index = ((address) >> (#index_shift)) & 0x1ff;
+                    &mut self.entries[index as usize]
+                }
             }
-        }
-*/
 
-        impl #entry_name {
-            pub fn new(address: u64, flags: u64) -> Option<Self> {
-                let mut shift: u8 = #normal_shift;
-                let mut valid: u64 = #valid_flags;
+    /* -- "[E0658]: procedural macros cannot expand to macro definitions"
+            #[macro_export]
+            macro_rules! #convert_macro_name {
+                ($x:expr) => {
+                    unsafe_cast!($x => &mut #table)
+                }
+            }
+    */
 
-                if #huge_flags != 0 && ((flags & #huge_flags) == #huge_flags) {
-                    valid |= #valid_huge_flags;
-                    shift = #huge_shift;
+            impl #entry_name {
+                pub fn new(address: u64, flags: u64) -> Option<Self> {
+                    let mut shift: u8 = #normal_shift;
+                    let mut valid: u64 = #valid_flags;
+
+                    if #huge_flags != 0 && ((flags & #huge_flags) == #huge_flags) {
+                        valid |= #valid_huge_flags;
+                        shift = #huge_shift;
+                    }
+
+                    let aligned = ((address & ((1 << shift) - 1)) == 0);
+                    if !aligned || ((valid & flags) != flags) {
+                        return None;
+                    }
+
+                    Some(Self(address | flags))
                 }
 
-                let aligned = ((address & ((1 << shift) - 1)) == 0);
-                if !aligned || ((valid & flags) != flags) {
-                    return None;
+                pub fn raw(&self) -> u64 {
+                    self.0
                 }
 
-                Some(Self(address | flags))
+                pub fn huge(&self) -> bool {
+                    (self.0 & #huge_flags) == #huge_flags
+                }
             }
-
-            pub fn raw(&self) -> u64 {
-                self.0
-            }
-
-            pub fn huge(&self) -> bool {
-                (self.0 & #huge_flags) == #huge_flags
-            }
-        }
-    };
+        };
 
     TokenStream::from(output)
 }
